@@ -2,13 +2,13 @@
 // Keeps the fal.ai key on the server. Set FAL_KEY in the Vercel project settings.
 // Main model: FASHN try-on. Backup: Kling Kolors. See the PRD "try-on pipeline" section.
 
-export const config = { runtime: 'edge' };
+// Node runtime (not edge): FASHN can take 10-25s, longer than edge allows before the first byte.
+export const maxDuration = 60;
 
 const FAL = 'https://fal.run';
 const MODELS = ['fal-ai/fashn/tryon/v1.6', 'fal-ai/kling/v1-5/kolors-virtual-try-on'];
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'POST') return new Response('POST only', { status: 405 });
+export async function POST(req: Request): Promise<Response> {
   const key = (globalThis as unknown as { process?: { env: Record<string, string | undefined> } }).process?.env.FAL_KEY;
   if (!key) return new Response('FAL_KEY is not set on the server', { status: 500 });
 
