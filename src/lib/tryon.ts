@@ -1,5 +1,5 @@
 // Virtual try-on adapter. The app talks only to our own endpoint (api/tryon.ts),
-// which holds the fal.ai key server side and calls FASHN (main) with Kling Kolors as backup.
+// which holds the fal.ai key server side and calls Nano Banana Pro (main), Seedream and FASHN as backups.
 //
 // Set VITE_TRYON_ENDPOINT at build time (e.g. "/api/tryon") to switch it on.
 // Without it, the drawn model stands in and the "Make it realistic" button explains why.
@@ -12,6 +12,7 @@ export interface TryOnRequest {
   garmentImage: string; // PNG data URL of the drawn look (front view)
   view: 'front' | 'back' | 'side';
   description: string; // plain text spec, helps the model with fabric and parts
+  prompt: string; // edit instruction for the main model (silhouette, length, fabric)
 }
 
 export async function requestTryOn(req: TryOnRequest): Promise<string> {

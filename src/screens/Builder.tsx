@@ -12,7 +12,7 @@ import {
 import type { AccKey, BackKind, PartKey, SkirtKind, SleeveKind, StylePic, TopKind, View } from '../lib/data';
 import type { Look } from '../lib/types';
 import { newLook } from '../lib/types';
-import { accItem, allPics, figureProps, picById, tailorSpec } from '../lib/look';
+import { accItem, allPics, figureProps, picById, tailorSpec, tryOnPrompt } from '../lib/look';
 import { useStore } from '../lib/store';
 import { go, toast, useBp, useViewportH } from '../lib/hooks';
 import { averageColor, downloadSvgs } from '../lib/media';
@@ -103,7 +103,7 @@ export default function Builder({ lookId }: { lookId?: string }) {
     setBusy(true);
     try {
       const garment = await svgToPng(svg as SVGSVGElement);
-      const img = await requestTryOn({ personImage: look.photo, garmentImage: garment, view: viewKey, description: tailorSpec(look).map((r) => r.join(': ')).join('. ') });
+      const img = await requestTryOn({ personImage: look.photo, garmentImage: garment, view: viewKey, description: tailorSpec(look).map((r) => r.join(': ')).join('. '), prompt: tryOnPrompt(look, viewKey) });
       upKeep({ tryon: { ...(look.tryon ?? {}), [viewKey]: img } });
       setShowReal(true);
     } catch (e) {

@@ -18,7 +18,7 @@ add gele and accessories, then send the tailor a card with exact measurements.
 - **Stylist studio**: white-label brand (logo, name, colours, WhatsApp, Instagram, page name), catalogue (upload work,
   tag by part, filter), clients (add, event dates, start a look for a client).
 - **Realistic try-on**: "Make it realistic" sends the person's photo and the drawn look to `api/tryon.ts`, which calls
-  fal.ai FASHN (Kling Kolors as backup). The key stays on the server.
+  fal.ai Nano Banana Pro image edit, guided by a prompt built from the look (silhouette, length, fabric), with Seedream and FASHN as backups. The key stays on the server.
 
 Stack: Vite, React 18, TypeScript, Framer Motion (UI motion), GSAP (spin view). Data is kept in the browser for now
 (`src/lib/store.tsx`); the PRD's Supabase backend replaces that one module.

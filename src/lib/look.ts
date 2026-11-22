@@ -93,3 +93,38 @@ export const tailorSpec = (look: Look): [string, string][] => {
   if (look.notes) rows.push(['Notes', look.notes]);
   return rows;
 };
+
+const SKIRT_SHAPE: Record<string, string> = {
+  mermaid: 'fitted mermaid skirt that hugs the hips and thighs down to the knee, then flares out wide at the hem',
+  straight: 'straight column skirt',
+  aline: 'A-line skirt that widens gently from the waist',
+  ball: 'full, voluminous ball-gown skirt',
+  wrap: 'iro wrapper skirt tied at the waist',
+};
+const LENGTH_WORDS: Record<string, string> = { Floor: 'floor-length', Ankle: 'ankle-length', Midi: 'midi-length (below the knee)', Knee: 'knee-length', Mini: 'mini-length (above the knee)' };
+const TOP_WORDS: Record<string, string> = { square: 'a square neckline', corset: 'a structured corset bodice', offshoulder: 'an off-shoulder neckline', vneck: 'a V-neckline', buba: 'a loose buba blouse top' };
+
+/** Instruction for the image-edit try-on model. The silhouette words matter most:
+ *  without them models shorten skirts, drop the flare and invent slits. */
+export const tryOnPrompt = (look: Look, view: View): string => {
+  const t = picById(look, look.mix.Top), s = picById(look, look.mix.Sleeves), k = picById(look, look.mix.Skirt);
+  const backKey = look.backOverride ?? picById(look, look.mix.Back).back;
+  const P = look.parts;
+  const same = P.Top.c === P.Skirt.c && P.Top.f === P.Skirt.f && P.Top.c === P.Sleeves.c && P.Top.img === P.Skirt.img;
+  const hem = nameFor(HEM_PRESETS, look.hem);
+  const join = nameFor(JOIN_PRESETS, look.join);
+  const fabric = same ? fabName(P.Top) : `top in ${fabName(P.Top)}, sleeves in ${fabName(P.Sleeves)}, skirt in ${fabName(P.Skirt)}`;
+  const gown = [
+    `${TOP_WORDS[t.top] ?? TOP_NAMES[t.top]}`,
+    `${SLEEVE_NAMES[s.sleeve].toLowerCase()}s`.replace('sleevelesss', 'no sleeves'),
+    `the top joins the skirt at the ${join === 'Custom' ? 'waist' : join.toLowerCase()}${look.peplum ? ' with a peplum flare' : ''}`,
+    `${/^[aeiou]/i.test(LENGTH_WORDS[hem] ?? 'f') ? 'an' : 'a'} ${LENGTH_WORDS[hem] ?? 'floor-length'} ${SKIRT_SHAPE[k.skirt] ?? 'skirt'}`,
+    `fabric: ${fabric.replace(/ \(#?[0-9A-F]{6}\)/gi, '')}`,
+    view === 'back' ? `back: ${BACK_NAMES[backKey].toLowerCase()}` : '',
+  ].filter(Boolean).join('; ');
+  const noSlit = k.skirt === 'wrap' ? '' : ' The skirt is closed all the way round with no slit.';
+  const angle = view === 'back' ? ' Show her from behind.' : view === 'side' ? ' Show her from the side.' : '';
+  return `Dress the woman in the first image in the exact outfit shown in the second image, which is a flat drawing of a Nigerian owambe outfit. ` +
+    `Outfit: ${gown}.${noSlit} Copy the outfit's silhouette, length, sleeves and fabric pattern exactly from the drawing; render the fabric as real cloth. ` +
+    `Keep her face, hair, skin tone, body shape and pose unchanged.${angle} Realistic full-body fashion photo, plain light studio background.`;
+};
