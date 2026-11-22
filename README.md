@@ -32,6 +32,8 @@ npm run build          # static site in dist/ (deploy to Vercel; api/tryon.ts be
 npm run build:single   # one self-contained HTML file in dist-single/ for quick previews
 ```
 
+Try-on locally: create `.env.local` with `FAL_KEY=...` and `VITE_TRYON_ENDPOINT=/api/tryon`, then restart `npm run dev`. The dev server runs `api/tryon.ts` itself, so the key stays on your machine and out of the browser.
+
 Deploy on Vercel: import the repo, set `FAL_KEY` (server) and `VITE_TRYON_ENDPOINT=/api/tryon`, deploy.
 
 ## Known gaps (next)
