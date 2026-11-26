@@ -17,3 +17,9 @@ Photo spec (all views of one model must match):
 - WebP, quality about 84.
 
 Every entry records `source` (`ai-pilot`, `photoshoot` or `licensed`) and a `credit`. The five pilot models (adaeze, temi, halima, ifeoma, bisola) are AI-generated fictional people made for the pilot. Replace them with released photoshoot images before launch by dropping new files into the same folders and changing `source`.
+
+## Personalisation calibration
+
+Each view also has a body mask, `<view>-mask.png` (greyscale, white = person), made once with a background-removal model (BiRefNet on fal). The personalisation engine uses it to find the body outline and the bust, waist and hip lines.
+
+Each model also needs body measurements in cm in `src/lib/engine/calibration.ts`. The pilot values are standard UK size-chart values for her dress size, and her height is assumed. For a real photoshoot, measure the model on the day and record the real values there. When you replace a photo, make a new mask for it too.

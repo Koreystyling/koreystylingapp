@@ -22,6 +22,29 @@ export const fileToDataUrl = (file: File, max = 640, quality = 0.82): Promise<st
     reader.readAsDataURL(file);
   });
 
+/**
+ * Re-encode a photo as JPEG at a sensible size. Re-drawing through a canvas also drops
+ * EXIF metadata such as GPS location, which matters for customer photos.
+ */
+export const fileToJpegBlob = (file: Blob, max = 1600, quality = 0.9): Promise<{ blob: Blob; width: number; height: number }> =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Not an image')); };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * scale);
+      c.height = Math.round(img.naturalHeight * scale);
+      const ctx = c.getContext('2d');
+      if (!ctx) return reject(new Error('No canvas'));
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob((b) => (b ? resolve({ blob: b, width: c.width, height: c.height }) : reject(new Error('Could not encode'))), 'image/jpeg', quality);
+    };
+    img.src = url;
+  });
+
 /** Average colour of an image, used as the base colour behind an uploaded fabric. */
 export const averageColor = (src: string): Promise<string> =>
   new Promise((resolve) => {

@@ -5,6 +5,8 @@
 // looks save, so swapping a photo for a better one never breaks saved looks.
 
 import type { Look } from './types';
+import type { PersonalizationProfile } from './profile';
+import { blobToDataUrl, getImage } from './privateImages';
 
 export type ModelView = 'front' | 'side' | 'back';
 export type SkinTone = 'Deep' | 'Dark brown' | 'Medium-dark' | 'Medium brown' | 'Light brown';
@@ -56,20 +58,24 @@ export const modelFor = (look: Pick<Look, 'modelId' | 'model'>): ModelEntry =>
 /** Best available photo for a view: the asked view, else the front. */
 export const modelPhoto = (m: ModelEntry, view: ModelView) => m.views[view] ?? m.views.front!;
 
-const toDataUrl = async (url: string) => {
-  const blob = await (await fetch(url)).blob();
-  return new Promise<string>((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(blob);
-  });
-};
+const toDataUrl = async (url: string) => blobToDataUrl(await (await fetch(url)).blob());
+
+/** The base model a look dresses: the person's profile decides when there is one. */
+export const baseModelFor = (look: Pick<Look, 'modelId' | 'model'>, profile?: PersonalizationProfile | null): ModelEntry =>
+  modelById(profile?.baseModelId) ?? modelFor(look);
 
 /**
- * The person image for the try-on pipeline: the customer's own photo when they gave one,
- * otherwise the selected library model's photo for that view. Sent as a data URL so it
- * works the same on localhost, previews and production.
+ * The person image for the try-on pipeline: the personalised model's view when one is
+ * completed and up to date, otherwise the base model's photo for that view. Uploaded face
+ * and body photos are references for personalisation and are never sent as the body.
+ * Sent as a data URL so it works the same on localhost, previews and production.
  */
-export const personImageFor = async (look: Look, view: ModelView): Promise<string> =>
-  look.photo ?? toDataUrl(new URL(modelPhoto(modelFor(look), view), window.location.href).href);
+export const personImageFor = async (look: Look, view: ModelView, profile?: PersonalizationProfile | null): Promise<string> => {
+  const pm = profile?.personalizationStatus === 'completed' ? profile.personalizedModel : null;
+  const ref = pm?.views[view] ?? pm?.views.front;
+  if (ref) {
+    const blob = await getImage(ref.id);
+    if (blob) return blobToDataUrl(blob);
+  }
+  return toDataUrl(new URL(modelPhoto(baseModelFor(look, profile), view), window.location.href).href);
+};

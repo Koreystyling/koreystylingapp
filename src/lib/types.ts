@@ -14,7 +14,9 @@ export interface Look {
   updatedAt: number;
   model: number; // size index for the garment sketch proportions
   modelId?: string; // selected photo model from the library (src/lib/models.ts)
-  photo?: string | null; // uploaded full-body photo
+  /** @deprecated Legacy: a photo uploaded straight onto a look (data URL). Migrated into the owner's personalisation profile as a body reference on load. Never shown as the model. */
+  photo?: string | null;
+  profileId?: string | null; // personalisation profile of the person this look is for
   tryon?: { front?: string; back?: string; side?: string } | null; // AI try-on results
   unit: 'cm' | 'in';
   meas: Record<string, number>; // always stored in cm
