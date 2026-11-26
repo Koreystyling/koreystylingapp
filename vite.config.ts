@@ -2,13 +2,13 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
-/** Runs api/tryon.ts inside `npm run dev`, so try-on works locally without `vercel dev`.
+/** Runs the api/*.ts functions (try-on, personalise) inside `npm run dev`, so try-on works locally without `vercel dev`.
  *  Reads FAL_KEY from .env.local (server side only, never sent to the browser). */
 const localApi = (env: Record<string, string>): Plugin => ({
   name: 'korey-local-api',
   configureServer(server) {
     if (env.FAL_KEY) process.env.FAL_KEY = env.FAL_KEY;
-    server.middlewares.use('/api/tryon', async (req, res) => {
+    for (const name of ['tryon', 'personalise']) server.middlewares.use(`/api/${name}`, async (req, res) => {
       try {
         const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c as Buffer);
@@ -17,14 +17,14 @@ const localApi = (env: Record<string, string>): Plugin => ({
           headers: req.headers as Record<string, string>,
           body: req.method === 'GET' || req.method === 'HEAD' ? undefined : Buffer.concat(chunks),
         });
-        const mod = await server.ssrLoadModule('/api/tryon.ts');
+        const mod = await server.ssrLoadModule(`/api/${name}.ts`);
         const out: Response = req.method === 'POST' ? await mod.POST(request) : new Response('Use POST', { status: 405 });
         res.statusCode = out.status;
         out.headers.forEach((v, k) => res.setHeader(k, v));
         res.end(Buffer.from(await out.arrayBuffer()));
       } catch (e) {
         res.statusCode = 500;
-        res.end(`Local try-on error: ${(e as Error).message}`);
+        res.end(`Local ${name} error: ${(e as Error).message}`);
       }
     });
   },

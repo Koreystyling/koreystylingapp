@@ -5,10 +5,12 @@ import { Page, TopBar } from '../components/Shell';
 import ModelPhoto from '../components/ModelPhoto';
 import { MEASURES } from '../lib/data';
 import { DEFAULT_MODEL_ID, MODELS, modelById, modelFor } from '../lib/models';
-import type { ModelEntry } from '../lib/models';
+import type { ModelEntry, ModelView } from '../lib/models';
+import type { PersonalisationChecks } from '../lib/engine/core';
+import { TOLERANCE_CM } from '../lib/engine/core';
 import {
-  CONSENT_TEXT, STATUS_LABEL, bodyStale, giveConsent, identityStale, newProfile, setBaseModel, setBodyReference,
-  setFaceReference, setMeasurements, setUnit, withStatus,
+  CONSENT_TEXT, STATUS_LABEL, bodyStale, consentCurrent, giveConsent, identityStale, markCompleted, markFailed, markProcessing,
+  newProfile, setBaseModel, setBodyReference, setFaceReference, setMeasurements, setUnit, withStatus,
 } from '../lib/profile';
 import type { ImageReference, PersonalizationProfile, PersonalizationStatus } from '../lib/profile';
 import { deleteImages, putImage } from '../lib/privateImages';
@@ -46,7 +48,7 @@ export function StatusBadge({ status }: { status: PersonalizationStatus }) {
 const STATUS_HELP: Record<PersonalizationStatus, string> = {
   not_personalised: 'Using the Korey model as she is. Add a face photo or a full-body photo to personalise her.',
   awaiting_references: 'Add a face photo or a full-body photo (and agree to the consent note) to get ready.',
-  ready: 'Your photos and measurements are saved and ready. The personalisation engine is not switched on yet, so the base model is still shown.',
+  ready: 'Your photos and measurements are saved and ready. Create your personalised model below.',
   processing: 'Making your personalised model.',
   completed: 'Your personalised model is ready and is reused for every outfit.',
   failed: 'The last attempt failed. Your photos and measurements are kept.',
@@ -74,6 +76,8 @@ export default function Profile({ ownerKey }: { ownerKey: string }) {
   const [dirty, setDirty] = useState(!saved);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [step, setStep] = useState<string | null>(null);
+  const [view, setView] = useState<ModelView>('front');
 
   const change = (fn: (p: PersonalizationProfile) => PersonalizationProfile) => { setDraft(fn); setDirty(true); };
   const base = modelById(draft.baseModelId) ?? modelById(DEFAULT_MODEL_ID)!;
@@ -126,6 +130,43 @@ export default function Profile({ ownerKey }: { ownerKey: string }) {
     toast('Your photos and anything made from them are deleted from this device.');
   };
 
+  // Run the engine on the saved profile. Each stage is checked; a failed check saves nothing.
+  const create = async () => {
+    if (!saved || dirty || step) return;
+    let p = markProcessing(saved);
+    store.saveProfile(p);
+    setDraft(p);
+    setStep('Starting');
+    const old = Object.values(saved.personalizedModel?.views ?? {}).map((v) => v!.id);
+    try {
+      const { personalise, ENGINE_VERSION } = await import('../lib/engine/run'); // loaded only when used
+      const result = await personalise(p, setStep);
+      const views: Partial<Record<ModelView, ImageReference>> = {};
+      for (const [v, blob] of Object.entries(result.views) as [ModelView, Blob][]) {
+        const ref = await putImage(blob, { width: 848, height: 1264 }, 'generated');
+        views[v] = { ...ref, kind: 'generated', version: 1 };
+      }
+      p = markCompleted(p, views, ENGINE_VERSION, Date.now(), result.checks);
+      store.saveProfile(p);
+      await deleteImages(old);
+      setDraft(p);
+      toast('Your personalised model is ready.');
+    } catch (e) {
+      p = markFailed(p, (e as Error).message || 'Something went wrong.');
+      store.saveProfile(p);
+      setDraft(p);
+    } finally { setStep(null); }
+  };
+
+  const shown = saved ?? draft;
+  const canCreate = !!saved && !dirty && !step && consentCurrent(saved) && !!saved.faceReference
+    && ['ready', 'failed', 'needs_regeneration'].includes(saved.personalizationStatus);
+  const why = !saved || dirty ? 'Save your profile first.'
+    : !consentCurrent(saved) ? 'Agree to the consent note first.'
+    : !saved.faceReference ? 'Add a face photo first. It sets her face and skin tone.'
+    : saved.personalizationStatus === 'completed' ? 'Your personalised model is up to date.'
+    : null;
+
   const back = look ? `/build/${look.id}` : '/';
 
   return (
@@ -150,8 +191,17 @@ export default function Profile({ ownerKey }: { ownerKey: string }) {
             <span className="lbl">Preview</span>
             <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
               <figure style={{ margin: 0, flex: '1 1 auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <ModelPhoto model={base} h={phone ? 300 : 380} style={{ width: '100%', objectPosition: '50% 20%' }} />
-                <figcaption style={{ fontSize: 13 }}><b>Base model: {base.name}</b> · UK {base.ukSize} · {base.bodyShape}</figcaption>
+                {shown.personalizedModel
+                  ? <Personalised id={shown.personalizedModel.views[view]?.id ?? shown.personalizedModel.views.front?.id} h={phone ? 300 : 380} />
+                  : <ModelPhoto model={base} h={phone ? 300 : 380} style={{ width: '100%', objectPosition: '50% 20%' }} />}
+                {shown.personalizedModel && (
+                  <div role="group" aria-label="View" style={{ display: 'flex', gap: 6 }}>
+                    {(['front', 'side', 'back'] as ModelView[]).filter((v) => shown.personalizedModel!.views[v]).map((v) => (
+                      <button key={v} onClick={() => setView(v)} aria-pressed={view === v} className={'stk' + (view === v ? ' on' : '')} style={{ minHeight: 36, padding: '0 12px', fontSize: 13, textTransform: 'capitalize', ['--accent' as string]: '#16121A' }}>{v}</button>
+                    ))}
+                  </div>
+                )}
+                <figcaption style={{ fontSize: 13 }}><b>{shown.personalizedModel ? `Personalised from ${modelById(shown.personalizedModel.baseModelId)?.name ?? base.name}` : `Base model: ${base.name}`}</b> · UK {base.ukSize} · {base.bodyShape}</figcaption>
               </figure>
               <div style={{ flex: '0 0 30%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <RefThumb label="Face" draft={face} saved={draft.faceReference} />
@@ -175,8 +225,9 @@ export default function Profile({ ownerKey }: { ownerKey: string }) {
 
             <Section n={2} title="Consent" hint="Needed before you add photos.">
               <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 14, lineHeight: 1.45, cursor: 'pointer' }}>
-                <input type="checkbox" checked={draft.consent.given} disabled={draft.consent.given} onChange={() => change((p) => giveConsent(p))} style={{ width: 22, height: 22, flex: 'none', marginTop: 1 }} />
-                <span>{CONSENT_TEXT}{draft.consent.given && draft.consent.at ? <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>Agreed {new Date(draft.consent.at).toLocaleDateString()}</span> : null}</span>
+                <input type="checkbox" checked={consentCurrent(draft)} disabled={consentCurrent(draft)} onChange={() => change((p) => giveConsent(p))} style={{ width: 22, height: 22, flex: 'none', marginTop: 1 }} />
+                <span>{CONSENT_TEXT}{consentCurrent(draft) && draft.consent.at ? <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>Agreed {new Date(draft.consent.at).toLocaleDateString()}</span> : null}
+                  {draft.consent.given && !consentCurrent(draft) ? <span style={{ display: 'block', fontSize: 12, color: '#7A5600' }}>This note changed since you agreed. Please read it and agree again.</span> : null}</span>
               </label>
             </Section>
 
@@ -193,12 +244,18 @@ export default function Profile({ ownerKey }: { ownerKey: string }) {
             </Section>
 
             <Section n={6} title="Personalised model" hint="Made once, then reused for every outfit.">
-              <button className="stk" disabled style={{ minHeight: 48, padding: '0 16px', fontSize: 14, alignSelf: 'flex-start' }}>Create personalised model</button>
-              <span style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.45 }}>Not available yet: the personalisation engine is the next build step. Saving now keeps everything ready for it.</span>
+              <motion.button whileTap={{ scale: 0.97 }} className="stk dark" onClick={create} disabled={!canCreate} style={{ minHeight: 48, padding: '0 16px', fontSize: 14, alignSelf: 'flex-start' }}>
+                {step ? 'Working…' : shown.personalizedModel ? 'Make it again' : 'Create personalised model'}
+              </motion.button>
+              {step && <span role="status" style={{ fontSize: 14, fontWeight: 600 }}>{step}… This takes about a minute.</span>}
+              {!step && why && <span style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.45 }}>{why}</span>}
+              {!step && shown.personalizationStatus === 'failed' && shown.lastError && <span role="alert" style={{ fontSize: 13, color: '#A32020', lineHeight: 1.45 }}>{shown.lastError}</span>}
+              <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.45 }}>We reshape her body to your bust, waist and hips and check the result is within {TOLERANCE_CM} cm, match her skin to your face photo, then add your face. Height is saved but not drawn.</span>
+              {shown.personalizedModel?.checks && <Checks c={shown.personalizedModel.checks} />}
             </Section>
 
             <Section n={7} title="Your data" hint="Photos stay private on this device.">
-              <span style={{ fontSize: 13, color: 'var(--muted-2)', lineHeight: 1.5 }}>Photos are kept in this browser's private storage, not on a public link, and are not uploaded anywhere until the personalisation engine runs. Clearing this browser's data also removes them.</span>
+              <span style={{ fontSize: 13, color: 'var(--muted-2)', lineHeight: 1.5 }}>Photos are kept in this browser's private storage, not on a public link. Only your face photo is sent, once per run, to our image service to add your face; the full-body photo never leaves this device. Clearing this browser's data also removes them.</span>
               {!confirmDelete
                 ? <button className="stk" onClick={() => setConfirmDelete(true)} disabled={!saved?.faceReference && !saved?.bodyReference && !saved?.personalizedModel && face === undefined && body === undefined} style={{ minHeight: 44, padding: '0 14px', fontSize: 14, alignSelf: 'flex-start', color: '#A32020' }}>Delete my photos and generated images</button>
                 : (
@@ -300,5 +357,34 @@ function Measurements({ p, onChange, onUnit }: { p: PersonalizationProfile; onCh
         })}
       </div>
     </>
+  );
+}
+
+function Personalised({ id, h }: { id?: string; h: number }) {
+  const url = usePrivateImage(id ?? null, null);
+  return (
+    <span style={{ display: 'block', width: '100%', height: h, borderRadius: 12, overflow: 'hidden', background: '#EFECE8' }}>
+      {url && <img src={url} alt="Your personalised model" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '50% 20%' }} />}
+    </span>
+  );
+}
+
+/** What the engine measured, in plain words, so nobody has to take the picture on trust. */
+function Checks({ c }: { c: PersonalisationChecks }) {
+  const f = c.body.front;
+  const row = (k: string, est: number, want: number) => <tr key={k}><td>{k}</td><td>{want} cm</td><td>{est} cm</td></tr>;
+  return (
+    <details style={{ fontSize: 13, lineHeight: 1.5 }}>
+      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>What we checked</summary>
+      {f && (
+        <table style={{ borderCollapse: 'collapse', marginTop: 6 }} cellPadding={4}>
+          <thead><tr><th align="left">Front view</th><th align="left">Yours</th><th align="left">Measured in the picture</th></tr></thead>
+          <tbody>{row('Bust', f.estimatedCm.bust, f.targetCm.bust)}{row('Waist', f.estimatedCm.waist, f.targetCm.waist)}{row('Hips', f.estimatedCm.hips, f.targetCm.hips)}</tbody>
+        </table>
+      )}
+      <p style={{ margin: '6px 0 0' }}>Measured from the body's width in the picture, compared with the base model. Every view is within {TOLERANCE_CM} cm.</p>
+      {c.skin && <p style={{ margin: '4px 0 0' }}>Skin tone difference from your face photo: {c.skin.deltaE} (6 or less passes).</p>}
+      <p style={{ margin: '4px 0 0' }}>Face: added on the {c.face.views.join(' and ')} views. Likeness is not checked automatically yet, so please look at it yourself.</p>
+    </details>
   );
 }

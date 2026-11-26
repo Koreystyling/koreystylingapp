@@ -8,6 +8,7 @@
 // Everything in this file is pure (no storage, no DOM) so the workflow can be unit tested.
 
 import type { ModelView } from './models';
+import type { PersonalisationChecks } from './engine/core';
 
 export type PersonalizationStatus =
   | 'not_personalised'
@@ -39,7 +40,7 @@ export interface ImageReference {
   bytes: number;
   addedAt: number;
   version: number; // goes up every time this slot gets a new photo
-  origin?: 'upload' | 'legacy-look-photo';
+  origin?: 'upload' | 'legacy-look-photo' | 'generated';
 }
 
 export interface MeasurementProfile {
@@ -58,6 +59,7 @@ export interface PersonalizedModel {
   measurementVersion: number;
   engine: string;
   createdAt: number;
+  checks?: PersonalisationChecks; // what the engine measured; absent on results from before the engine existed
 }
 
 export interface Consent {
@@ -83,9 +85,12 @@ export interface PersonalizationProfile {
   updatedAt: number;
 }
 
-export const CONSENT_TEXT_VERSION = '2026-11-26';
+export const CONSENT_TEXT_VERSION = '2026-11-26b';
 export const CONSENT_TEXT =
-  'I agree that Korey may store these photos privately on this device and use them only to personalise my chosen model. I can delete them, and anything made from them, at any time.';
+  'I agree that Korey may store these photos privately on this device and use them only to personalise my chosen model. To add my face, my face photo is sent once to Korey\'s image service (fal.ai) for processing and is not published. I can delete my photos, and anything made from them, at any time.';
+
+/** Consent must be to the current wording before the engine may send a photo anywhere. */
+export const consentCurrent = (p: PersonalizationProfile) => p.consent.given && p.consent.textVersion === CONSENT_TEXT_VERSION;
 
 const pid = () => 'p_' + Math.random().toString(36).slice(2, 10);
 
@@ -189,12 +194,12 @@ export const markProcessing = (p: PersonalizationProfile): PersonalizationProfil
   return { ...p, personalizationStatus: 'processing', lastError: null, updatedAt: Date.now() };
 };
 
-export const markCompleted = (p: PersonalizationProfile, views: PersonalizedModel['views'], engine: string, now = Date.now()): PersonalizationProfile =>
+export const markCompleted = (p: PersonalizationProfile, views: PersonalizedModel['views'], engine: string, now = Date.now(), checks?: PersonalisationChecks): PersonalizationProfile =>
   withStatus({
     ...p,
     personalizationStatus: 'completed',
     personalizedModel: {
-      views, engine, createdAt: now, baseModelId: p.baseModelId,
+      views, engine, createdAt: now, baseModelId: p.baseModelId, ...(checks ? { checks } : {}),
       faceVersion: p.faceReference?.version ?? null,
       bodyReferenceVersion: p.bodyReference?.version ?? null,
       measurementVersion: p.measurementProfile.version,
@@ -228,6 +233,10 @@ export const clearPersonalImages = (p: PersonalizationProfile): PersonalizationP
 
 /** Profiles saved by older versions of the app may miss fields; fill them in. */
 export const normaliseProfile = (raw: Partial<PersonalizationProfile> & { id: string; ownerKey: string; baseModelId: string }): PersonalizationProfile =>
+  // A run that was still processing when the app closed never finished: show it as failed.
+  raw.personalizationStatus === 'processing'
+    ? normaliseProfile({ ...raw, personalizationStatus: 'failed', lastError: 'The last attempt was interrupted before it finished. Nothing was saved.' })
+    :
   withStatus({
     displayName: raw.ownerKey === 'me' ? 'Me' : 'Client',
     faceReference: null,
