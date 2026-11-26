@@ -36,7 +36,7 @@ export const MODEL_WIDTH = [0.88, 0.94, 1, 1.06, 1.12, 1.18];
 
 export const MEASURES: [string, number][] = [
   ['Bust', 106], ['Waist', 92], ['Hips', 118], ['Shoulder', 40], ['Underbust', 92],
-  ['Bust point', 26], ['Arm length', 58], ['Round arm', 34], ['Top length', 40], ['Full length', 142],
+  ['Bust point', 26], ['Arm length', 58], ['Round arm', 34], ['Top length', 40], ['Full length', 142], ['Height', 165],
 ];
 
 export interface StylePic {

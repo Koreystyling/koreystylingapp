@@ -3,12 +3,16 @@ import type { ReactNode } from 'react';
 import type { Brand, CatalogueItem, Client, Look } from './types';
 import { newLook, uid } from './types';
 import type { FabricSwatch } from './data';
+import type { PersonalizationProfile } from './profile';
+import { clearPersonalImages, imageIdsOf, newProfile, normaliseProfile, setBodyReference } from './profile';
+import { dataUrlToBlob, deleteImages, putImage } from './privateImages';
 
 // MVP persistence: everything lives in this browser (localStorage).
 // The PRD's Supabase backend replaces this module later; screens only use the hook.
 
 interface State {
   looks: Look[];
+  profiles: PersonalizationProfile[]; // one per person ('me' or a client); photos live in IndexedDB
   clients: Client[];
   catalogue: CatalogueItem[];
   fabrics: FabricSwatch[];
@@ -35,6 +39,7 @@ const seed = (): State => {
   looks.forEach((l, i) => { l.updatedAt = Date.now() - i * 86400000; });
   return {
     looks,
+    profiles: [],
     clients: [
       { id: 'c1', name: 'Mrs Bisi Adeyemi', event: "60th birthday", date: '2026-12-06' },
       { id: 'c2', name: 'Tolu Bakare', event: 'Wedding aso-ebi', date: '2026-12-14' },
@@ -62,7 +67,10 @@ const seed = (): State => {
 const load = (): State => {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...seed(), ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      return { ...seed(), ...saved, profiles: (saved.profiles ?? []).map(normaliseProfile) };
+    }
   } catch { /* private mode or blocked storage: fall back to demo data */ }
   return seed();
 };
@@ -78,6 +86,13 @@ interface Ctx extends State {
   removeCatalogue: (id: string) => void;
   addFabric: (f: Omit<FabricSwatch, 'id'>) => FabricSwatch;
   spendCredit: (n?: number) => boolean;
+  getProfile: (id?: string | null) => PersonalizationProfile | undefined;
+  profileForOwner: (ownerKey: string) => PersonalizationProfile | undefined;
+  /** The owner's profile, created (not personalised yet) if they have none. */
+  ensureProfile: (ownerKey: string, displayName: string, baseModelId: string, valuesCm: Record<string, number>) => PersonalizationProfile;
+  saveProfile: (p: PersonalizationProfile) => void;
+  /** Delete every photo and generated image of a profile from this device. */
+  deletePersonalImages: (id: string) => Promise<void>;
   storageFull: boolean;
   reset: () => void;
 }
@@ -100,6 +115,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return { ...p, looks: exists ? p.looks.map((x) => (x.id === l.id ? nl : x)) : [nl, ...p.looks] };
   }), []);
 
+  // One-off migration: looks that carry a photo straight on the look (older app versions)
+  // move it into the owner's profile as a private full-body reference. Consent is not
+  // assumed, so the profile shows "Awaiting photos" until the person confirms.
+  useEffect(() => {
+    const legacy = s.looks.filter((l) => typeof l.photo === 'string' && l.photo.startsWith('data:'));
+    if (!legacy.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const l of legacy) {
+        try {
+          const blob = await dataUrlToBlob(l.photo!);
+          const bmp = await createImageBitmap(blob).catch(() => null);
+          const ref = await putImage(blob, { width: bmp?.width ?? 0, height: bmp?.height ?? 0 }, 'legacy-look-photo');
+          if (cancelled) { void deleteImages([ref.id]); return; }
+          setS((p) => {
+            const ownerKey = l.clientId ?? 'me';
+            const existing = p.profiles.find((x) => x.ownerKey === ownerKey);
+            let prof = existing ?? newProfile(ownerKey, l.clientName, l.modelId ?? 'halima', l.meas);
+            if (!prof.bodyReference) prof = setBodyReference(prof, ref);
+            else void deleteImages([ref.id]); // owner already has a body photo; keep theirs
+            const profiles = existing ? p.profiles.map((x) => (x.id === prof.id ? prof : x)) : [...p.profiles, prof];
+            return { ...p, profiles, looks: p.looks.map((x) => (x.id === l.id ? { ...x, photo: null, profileId: prof.id } : x)) };
+          });
+        } catch { /* leave the look as it is; it still works with its base model */ }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const value = useMemo<Ctx>(() => ({
     ...s,
     storageFull,
@@ -113,7 +158,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     removeCatalogue: (id) => setS((p) => ({ ...p, catalogue: p.catalogue.filter((x) => x.id !== id) })),
     addFabric: (f) => { const nf = { ...f, id: uid() }; setS((p) => ({ ...p, fabrics: [nf, ...p.fabrics] })); return nf; },
     spendCredit: (n = 1) => { if (s.credits < n) return false; setS((p) => ({ ...p, credits: p.credits - n })); return true; },
-    reset: () => setS(seed()),
+    reset: () => { void deleteImages(s.profiles.flatMap(imageIdsOf)); setS(seed()); },
+    getProfile: (id) => (id ? s.profiles.find((x) => x.id === id) : undefined),
+    profileForOwner: (ownerKey) => s.profiles.find((x) => x.ownerKey === ownerKey),
+    ensureProfile: (ownerKey, displayName, baseModelId, valuesCm) => {
+      const found = s.profiles.find((x) => x.ownerKey === ownerKey);
+      if (found) return found;
+      const np = newProfile(ownerKey, displayName, baseModelId, valuesCm);
+      setS((p) => (p.profiles.some((x) => x.ownerKey === ownerKey) ? p : { ...p, profiles: [...p.profiles, np] }));
+      return np;
+    },
+    saveProfile: (pr) => setS((p) => ({ ...p, profiles: p.profiles.some((x) => x.id === pr.id) ? p.profiles.map((x) => (x.id === pr.id ? pr : x)) : [...p.profiles, pr] })),
+    deletePersonalImages: async (id) => {
+      const pr = s.profiles.find((x) => x.id === id);
+      if (!pr) return;
+      await deleteImages(imageIdsOf(pr));
+      setS((p) => ({ ...p, profiles: p.profiles.map((x) => (x.id === id ? clearPersonalImages(x) : x)) }));
+    },
   }), [s, storageFull, saveLook]);
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;

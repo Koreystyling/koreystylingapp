@@ -5,6 +5,7 @@ import Home from './screens/Home';
 import Builder from './screens/Builder';
 import Tailor from './screens/Tailor';
 import Studio from './screens/Studio';
+import Profile from './screens/Profile';
 
 function Routes() {
   const r = useRoute();
@@ -13,6 +14,7 @@ function Routes() {
   if (r[0] === 'build') screen = <Builder key={r[1] ?? 'new'} lookId={r[1] ?? 'new'} />;
   else if (r[0] === 'tailor') screen = <Tailor lookId={r[1]} />;
   else if (r[0] === 't') screen = <Tailor payload={r[1]} />;
+  else if (r[0] === 'profile') screen = <Profile key={r[1] ?? 'me'} ownerKey={r[1] ?? 'me'} />;
   else if (r[0] === 'studio') screen = <Studio tab={(['brand', 'catalogue', 'clients'].includes(r[1]) ? r[1] : 'brand') as 'brand'} />;
   else screen = <Home />;
   return (

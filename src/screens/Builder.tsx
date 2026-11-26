@@ -19,7 +19,11 @@ import { go, toast, useBp, useViewportH } from '../lib/hooks';
 import { averageColor, downloadSvgs } from '../lib/media';
 import { shareUrl } from '../lib/share';
 import { requestTryOn, svgToPng, tryOnEnabled } from '../lib/tryon';
-import { MODELS, modelFor, personImageFor } from '../lib/models';
+import { MODELS, baseModelFor, personImageFor } from '../lib/models';
+import { setBaseModel, setMeasurements } from '../lib/profile';
+import type { PersonalizationProfile } from '../lib/profile';
+import { usePrivateImage } from '../lib/useImage';
+import { StatusBadge } from './Profile';
 
 type ViewTab = 'Front' | 'Back' | 'Side' | 'Spin';
 
@@ -33,10 +37,16 @@ export default function Builder({ lookId }: { lookId?: string }) {
 
   const initial = useMemo<Look>(() => {
     const found = lookId && lookId !== 'new' ? store.getLook(lookId) : undefined;
-    if (found) return found;
+    if (found) {
+      // The person's profile is the authority for base model and measurements.
+      const pr = store.getProfile(found.profileId);
+      return pr ? { ...found, modelId: pr.baseModelId, meas: { ...found.meas, ...pr.measurementProfile.valuesCm } } : found;
+    }
     const q = query();
     const client = store.clients.find((c) => c.id === q.get('client'));
-    return newLook(client ? { clientId: client.id, clientName: client.name, name: client.event || 'New look', neededBy: client.date, meas: { ...Object.fromEntries(MEASURES), ...(client.meas ?? {}) } } : {});
+    const pr = store.profileForOwner(client?.id ?? 'me');
+    const fromProfile = pr ? { profileId: pr.id, modelId: pr.baseModelId } : {};
+    return newLook(client ? { ...fromProfile, clientId: client.id, clientName: client.name, name: client.event || 'New look', neededBy: client.date, meas: { ...Object.fromEntries(MEASURES), ...(client.meas ?? {}), ...(pr?.measurementProfile.valuesCm ?? {}) } } : { ...fromProfile, ...(pr ? { meas: { ...Object.fromEntries(MEASURES), ...pr.measurementProfile.valuesCm } } : {}) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lookId]);
 
@@ -72,10 +82,13 @@ export default function Builder({ lookId }: { lookId?: string }) {
   const viewKey = (view === 'Spin' ? 'front' : view.toLowerCase()) as View;
   const fig = figureProps(look, viewKey);
   const real = showReal && look.tryon?.[viewKey];
-  const model = modelFor(look);
+  const profile = store.getProfile(look.profileId) ?? null;
+  const model = baseModelFor(look, profile);
+  const personalised = profile?.personalizationStatus === 'completed' ? profile.personalizedModel : null;
+  const persUrl = usePrivateImage(personalised?.views[viewKey]?.id ?? null);
   const photoW = Math.round(figH * PHOTO_RATIO);
   const shapeMode = step === 3 && view !== 'Spin';
-  const spinImages = { ...model.views, ...(look.photo ? { front: look.photo, side: look.photo, back: look.photo } : {}), ...(showReal ? look.tryon ?? {} : {}) };
+  const spinImages = { ...model.views, ...(showReal ? look.tryon ?? {} : {}) };
   const sketchH = Math.round(figH * (phone ? 0.36 : compact ? 0.3 : 0.38));
 
   // ----- shape: tap or drag on the model to set the lines
@@ -109,7 +122,7 @@ export default function Builder({ lookId }: { lookId?: string }) {
     setBusy(true);
     try {
       const garment = await svgToPng(svg as SVGSVGElement);
-      const personImage = await personImageFor(look, viewKey);
+      const personImage = await personImageFor(look, viewKey, profile);
       const img = await requestTryOn({ personImage, garmentImage: garment, view: viewKey, description: tailorSpec(look).map((r) => r.join(': ')).join('. '), prompt: tryOnPrompt(look, viewKey) });
       upKeep({ tryon: { ...(look.tryon ?? {}), [viewKey]: img } });
       setShowReal(true);
@@ -174,17 +187,15 @@ export default function Builder({ lookId }: { lookId?: string }) {
 
           <div style={{ position: 'absolute', top: 14, left: 14, zIndex: 3, display: 'flex', gap: 8, alignItems: 'center' }}>
             <button onClick={() => goStep(0)} className="stk" style={{ minHeight: 44, padding: '4px 14px 4px 6px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
-              {look.photo
-                ? <img src={look.photo} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: '1px solid #DED8E1' }} />
-                : <img src={model.thumb} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', objectPosition: '50% 8%', border: '1px solid #DED8E1' }} />}
+              <img src={model.thumb} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', objectPosition: '50% 8%', border: '1px solid #DED8E1' }} />
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: '#6B5B6E' }}>Dressing</span>
-                <span>{look.photo ? look.clientName : `${model.name} · UK ${model.ukSize}`}</span>
+                <span>{model.name}{personalised ? ` for ${look.clientName}` : ` · UK ${model.ukSize}`}</span>
               </span>
             </button>
-            <Upload className="stk" capture label="Upload a photo" onFile={(img) => up({ photo: img })} style={{ minHeight: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: accentText }}>
-              {Icon.upload}<span className="hide-phone">{look.photo ? 'New photo' : 'Upload photo'}</span>
-            </Upload>
+            <button onClick={() => go(`/profile/${look.clientId ?? 'me'}?look=${look.id}`)} aria-label="Personalise this model" className="stk" style={{ minHeight: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: accentText }}>
+              {Icon.sparkle}<span className="hide-phone">{profile && profile.personalizationStatus !== 'not_personalised' ? 'Personalisation' : 'Personalise'}</span>
+            </button>
           </div>
 
           {!compact && <span style={{ position: 'absolute', top: 22, right: 20, zIndex: 3, fontSize: 12, fontWeight: 600, color: '#3A3340', background: 'rgba(255,255,255,.7)', borderRadius: 999, padding: '6px 12px' }}>Preview for style. Sew from the measurements.</span>}
@@ -218,7 +229,7 @@ export default function Builder({ lookId }: { lookId?: string }) {
                     <motion.div key={viewKey + (real ? 'r' : shapeMode ? 's' : 'p')} initial={{ opacity: 0, scaleX: 0.6 }} animate={{ opacity: 1, scaleX: 1 }} exit={{ opacity: 0, scaleX: 0.6 }} transition={{ duration: 0.22 }} style={{ width: shapeMode ? figW : photoW, height: figH, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
                       {real ? <img src={real} alt={`Realistic preview, ${viewKey}`} style={{ height: figH, width: 'auto', objectFit: 'contain', borderRadius: 12 }} />
                         : shapeMode ? <Figure {...fig} garmentOnly w={figW} h={figH} />
-                          : look.photo ? <img src={look.photo} alt={`${look.clientName}'s photo`} style={{ height: figH, width: photoW, objectFit: 'cover', borderRadius: 14 }} />
+                          : persUrl ? <img src={persUrl} alt={`${model.name} personalised for ${look.clientName}, ${viewKey} view`} style={{ height: figH, width: photoW, objectFit: 'cover', borderRadius: 14 }} />
                             : <ModelPhoto model={model} view={viewKey} h={figH} />}
                     </motion.div>
                   </AnimatePresence>
@@ -274,8 +285,8 @@ export default function Builder({ lookId }: { lookId?: string }) {
                   <span className="it" style={{ fontSize: 16, color: 'var(--muted)' }}>{STEP_HINTS[step]}</span>
                 </div>
 
-                {step === 0 && <PersonStep look={look} up={up} upKeep={upKeep} />}
-                {step === 1 && <SizeStep look={look} upKeep={upKeep} />}
+                {step === 0 && <PersonStep look={look} up={up} upKeep={upKeep} profile={profile} />}
+                {step === 1 && <SizeStep look={look} upKeep={upKeep} profile={profile} />}
                 {step === 2 && <StyleStep look={look} up={up} pics={pics} cur={cur} />}
                 {step === 3 && <ShapeStep look={look} up={up} mode={mode} setMode={setMode} />}
                 {step === 4 && <BackStep look={look} up={up} upKeep={upKeep} />}
@@ -302,44 +313,37 @@ type UpKeep = (patch: Partial<Look>) => void;
 const on = (b: boolean) => 'stk' + (b ? ' on' : '');
 const H3 = ({ children }: { children: React.ReactNode }) => <span style={{ fontWeight: 700, fontSize: 15 }}>{children}</span>;
 
-function PersonStep({ look, up, upKeep }: { look: Look; up: Up; upKeep: UpKeep }) {
-  const { clients } = useStore();
+function PersonStep({ look, up, upKeep, profile }: { look: Look; up: Up; upKeep: UpKeep; profile: PersonalizationProfile | null }) {
+  const store = useStore();
+  const { clients } = store;
+  const base = baseModelFor(look, profile);
+  const ownerKey = look.clientId ?? 'me';
+  const pickModel = (id: string, size: number) => {
+    // The base model belongs to the person's profile when they have one, so every look for them follows.
+    if (profile) store.saveProfile(setBaseModel(profile, id));
+    up({ modelId: id, model: size });
+  };
   return (
     <>
-      {look.photo ? (
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', border: '1px solid var(--line-2)', borderRadius: 12, padding: 10 }}>
-          <img src={look.photo} alt="Uploaded photo" style={{ width: 84, height: 112, objectFit: 'cover', borderRadius: 9 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-            <span style={{ fontWeight: 700 }}>Photo added</span>
-            <span style={{ fontSize: 13, color: 'var(--muted)' }}>Tap “Make it realistic” under the model to see the look on this photo.</span>
-            <div className="row">
-              <Upload className="stk pill" capture onFile={(img) => up({ photo: img })}>Change</Upload>
-              <button className="stk pill" onClick={() => up({ photo: null })}>Remove</button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <Upload className="stk dash" capture max={900} onFile={(img) => up({ photo: img })} style={{ minHeight: 150, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, width: '100%' }}>
-          {Icon.camera}
-          <span style={{ fontSize: 16 }}>Upload a full-body photo</span>
-          <span style={{ fontSize: 13, fontWeight: 500, color: '#6B5B6E' }}>or take one now with the camera</span>
-        </Upload>
-      )}
       <label className="field">Who is it for?
-        <select className="input" value={look.clientId ?? 'me'} onChange={(e) => {
+        <select className="input" value={ownerKey} onChange={(e) => {
           const c = clients.find((x) => x.id === e.target.value);
-          upKeep(c ? { clientId: c.id, clientName: c.name, neededBy: look.neededBy ?? c.date, meas: { ...look.meas, ...(c.meas ?? {}) } } : { clientId: null, clientName: 'Me' });
+          const pr = store.profileForOwner(c?.id ?? 'me');
+          const link = pr ? { profileId: pr.id, modelId: pr.baseModelId } : { profileId: null };
+          upKeep(c
+            ? { ...link, clientId: c.id, clientName: c.name, neededBy: look.neededBy ?? c.date, meas: { ...look.meas, ...(c.meas ?? {}), ...(pr?.measurementProfile.valuesCm ?? {}) } }
+            : { ...link, clientId: null, clientName: 'Me', ...(pr ? { meas: { ...look.meas, ...pr.measurementProfile.valuesCm } } : {}) });
         }}>
           <option value="me">Me</option>
           {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </label>
-      <H3>{look.photo ? 'Korey model for this look' : 'Or choose a Korey model'}</H3>
+      <H3>Choose a Korey model</H3>
       <div className="grid3">
         {MODELS.map((m) => {
-          const sel = modelFor(look).id === m.id;
+          const sel = base.id === m.id;
           return (
-            <motion.button key={m.id} whileTap={{ scale: 0.96 }} onClick={() => up({ modelId: m.id, model: m.drawingSize })} aria-pressed={sel} aria-label={`${m.name}, ${m.bodyShape}, UK size ${m.ukSize}, ${m.skinTone} skin`} className={on(sel)}
+            <motion.button key={m.id} whileTap={{ scale: 0.96 }} onClick={() => pickModel(m.id, m.drawingSize)} aria-pressed={sel} aria-label={`${m.name}, ${m.bodyShape}, UK size ${m.ukSize}, ${m.skinTone} skin`} className={on(sel)}
               style={{ padding: 4, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 3, textAlign: 'left' }}>
               <img src={m.thumb} alt="" style={{ width: '100%', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: 9, display: 'block' }} />
               <span style={{ fontSize: 13, fontWeight: 700, padding: '0 4px' }}>{m.name}</span>
@@ -348,12 +352,23 @@ function PersonStep({ look, up, upKeep }: { look: Look; up: Up; upKeep: UpKeep }
           );
         })}
       </div>
+      <div style={{ border: '1px solid var(--line-2)', borderRadius: 14, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--paper)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>Make {base.name} look like {ownerKey === 'me' ? 'you' : look.clientName}</span>
+          <StatusBadge status={profile?.personalizationStatus ?? 'not_personalised'} />
+        </div>
+        <span style={{ fontSize: 13, color: 'var(--muted-2)', lineHeight: 1.45 }}>Add a face photo and, if you like, a full-body photo. They personalise {base.name}; they never replace her. Measurements set the body size.</span>
+        <motion.button whileTap={{ scale: 0.97 }} onClick={() => go(`/profile/${ownerKey}?look=${look.id}`)} className="stk dark" style={{ minHeight: 46, padding: '0 16px', fontSize: 14, alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {Icon.sparkle}{profile && (profile.faceReference || profile.bodyReference) ? 'Edit personalisation' : `Personalise ${base.name}`}
+        </motion.button>
+      </div>
       <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>Pilot models are AI-generated. Your measurements, not the model, go to the tailor.</span>
     </>
   );
 }
 
-function SizeStep({ look, upKeep }: { look: Look; upKeep: UpKeep }) {
+function SizeStep({ look, upKeep, profile }: { look: Look; upKeep: UpKeep; profile: PersonalizationProfile | null }) {
+  const store = useStore();
   const cm = look.unit === 'cm';
   return (
     <>
@@ -370,7 +385,7 @@ function SizeStep({ look, upKeep }: { look: Look; upKeep: UpKeep }) {
               <span style={{ fontSize: 12, color: '#6B5B6E', fontWeight: 700 }}>{name}</span>
               <span style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                 <input defaultValue={shown} key={look.unit} inputMode="decimal" aria-label={`${name} in ${look.unit}`}
-                  onChange={(e) => { const n = parseFloat(e.target.value.replace(',', '.')); upKeep({ meas: { ...look.meas, [name]: Number.isNaN(n) ? NaN : Math.round((cm ? n : n * 2.54) * 10) / 10 } }); }}
+                  onChange={(e) => { const n = parseFloat(e.target.value.replace(',', '.')); const cmv = Number.isNaN(n) ? NaN : Math.round((cm ? n : n * 2.54) * 10) / 10; upKeep({ meas: { ...look.meas, [name]: cmv } }); if (profile) store.saveProfile(setMeasurements(profile, { [name]: cmv })); }}
                   style={{ width: '100%', border: 0, fontSize: 19, fontWeight: 700, padding: '2px 0', minHeight: 28, background: 'transparent' }} />
                 <span style={{ fontSize: 12, color: '#6B5B6E' }}>{look.unit}</span>
               </span>
@@ -378,7 +393,7 @@ function SizeStep({ look, upKeep }: { look: Look; upKeep: UpKeep }) {
           );
         })}
       </div>
-      <span style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.45 }}>The garment sketch gets fuller or slimmer with the bust and hips. The tailor card always shows these exact numbers.</span>
+      <span style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.45 }}>{profile ? `Saved to ${look.clientName === 'Me' ? 'your' : look.clientName + "'s"} profile too, so every look for ${look.clientName === 'Me' ? 'you' : 'them'} uses them. ` : ''}The garment sketch gets fuller or slimmer with the bust and hips. The tailor card always shows these exact numbers.</span>
     </>
   );
 }
