@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
-import Figure from '../components/Figure';
 import { Page, TabBar, TopBar } from '../components/Shell';
 import { STYLE_CHIPS, WALLS } from '../lib/data';
-import { figureProps } from '../lib/look';
+import { modelFor, modelById } from '../lib/models';
+import ModelPhoto from '../components/ModelPhoto';
 import { useStore } from '../lib/store';
 import { useBp } from '../lib/hooks';
 import type { Look } from '../lib/types';
@@ -28,8 +28,6 @@ export default function Home() {
   const bp = useBp();
   const phone = bp === 'phone', laptop = bp === 'laptop';
   const tileH = phone ? 210 : bp === 'tablet' ? 300 : 290;
-  const figH = phone ? 188 : bp === 'tablet' ? 262 : 250;
-  const figW = Math.round(figH * 200 / 520);
   const sorted = [...looks].sort((a, b) => b.updatedAt - a.updatedAt);
   const lookCols = phone ? 2 : bp === 'tablet' ? 3 : 5;
   const upcoming = clients.filter((c) => c.date).sort((a, b) => (a.date! < b.date! ? -1 : 1)).slice(0, 4);
@@ -57,7 +55,7 @@ export default function Home() {
                 <motion.div key={i} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.1, duration: 0.5 }}
                   style={{ height: tileH, borderRadius: 18, background: [WALLS.pink, WALLS.gold, WALLS.teal][i], display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden', position: 'relative', marginTop: phone ? 0 : [24, 0, 36][i] }}>
                   <span aria-hidden="true" style={{ position: 'absolute', bottom: 4, width: '70%', height: 16, borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(22,18,26,.2),rgba(22,18,26,0) 70%)' }} />
-                  <span style={{ position: 'relative' }}><Figure {...figureProps(l, 'front')} bagStyle="none" w={figW} h={figH} /></span>
+                  <ModelPhoto model={modelById(['adaeze', 'bisola', 'ifeoma'][i]) ?? modelFor(l)} h={tileH} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: 0, objectPosition: '50% 20%' }} />
                 </motion.div>
               ))}
             </div>
@@ -96,7 +94,7 @@ export default function Home() {
                   <span style={{ position: 'relative', height: phone ? 200 : 236, background: walls[i % walls.length], display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
                     <span aria-hidden="true" style={{ position: 'absolute', bottom: 4, width: '60%', height: 12, borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(22,18,26,.2),rgba(22,18,26,0) 70%)' }} />
                     <span style={{ position: 'relative' }}>
-                      {l.tryon?.front ? <img src={l.tryon.front} alt="" style={{ height: phone ? 180 : 214 }} /> : <Figure {...figureProps(l, 'front')} w={phone ? 66 : 78} h={phone ? 172 : 204} />}
+                      {l.tryon?.front ? <img src={l.tryon.front} alt="" style={{ height: phone ? 180 : 214 }} /> : <ModelPhoto model={modelFor(l)} h={phone ? 200 : 236} style={{ borderRadius: 0 }} />}
                     </span>
                     <span style={{ position: 'absolute', top: 10, left: 10, fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,.88)', color: statusColor[l.status], borderRadius: 999, padding: '3px 9px', display: 'flex', alignItems: 'center', gap: 5 }}>
                       <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor[l.status] }} />{l.status}

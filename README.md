@@ -42,3 +42,7 @@ Deploy on Vercel: import the repo, set `FAL_KEY` (server) and `VITE_TRYON_ENDPOI
 - Paystack billing and real credit metering (credits are a counter for now).
 - AI reading of uploaded style pictures (today the user picks the closest shapes).
 - Real try-on images need fal credit on the account.
+
+## Model library
+
+The builder shows a photographic model instead of the old drawn figure. Models are defined in `src/lib/models.ts` (id, name, skin tone, body shape, UK size, views, source) with photos in `public/models/<id>/` (spec in `public/models/README.md`). Looks save `modelId`. The drawn SVG remains only as the garment sketch (stage inset, Shape step, tailor card, style thumbnails). `personImageFor()` gives the try-on the customer's photo, or the selected model's photo for the view. The five pilot models are AI-generated fictional people, marked `source: 'ai-pilot'`, to be replaced by a released photoshoot.

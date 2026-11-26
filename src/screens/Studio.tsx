@@ -6,6 +6,8 @@ import { BrandMark, Upload } from '../components/ui';
 import { BRAND_ACCENT, BRAND_MAIN } from '../lib/data';
 import type { SkirtKind, TopKind } from '../lib/data';
 import { figureProps } from '../lib/look';
+import { modelFor, modelById, DEFAULT_MODEL_ID } from '../lib/models';
+import ModelPhoto from '../components/ModelPhoto';
 import { useStore } from '../lib/store';
 import { useBp, go, toast } from '../lib/hooks';
 import type { CatalogueItem } from '../lib/types';
@@ -122,7 +124,8 @@ function BrandTab() {
               <span className="h" style={{ fontSize: 16 }}>{brand.name}</span>
             </motion.div>
             <div style={{ height: 260, background: 'radial-gradient(ellipse at 50% 40%,#F4F0F2 0%,#DCD4D8 100%)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-              <Figure {...(sample ? figureProps(sample, 'front') : {})} topPart={{ c: brand.main, d: brand.accent, f: 'lace' }} sleevePart={{ c: brand.main, d: brand.accent, f: 'lace' }} skirtPart={{ c: brand.main, d: brand.accent, f: 'lace' }} gele={brand.accent} geleStyle="fan" geleImg={null} shoe={brand.accent} bagStyle="none" w={96} h={250} />
+              {sample?.tryon?.front ? <img src={sample.tryon.front} alt="" style={{ height: 260, objectFit: 'contain' }} />
+                : <ModelPhoto model={sample ? modelFor(sample) : modelById(DEFAULT_MODEL_ID)!} h={260} style={{ borderRadius: 0, width: '100%', objectPosition: '50% 20%' }} />}
             </div>
             <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
               <span style={{ fontWeight: 700 }}>{sample?.name ?? 'Your look'}</span>
@@ -177,8 +180,8 @@ function CatalogueTab() {
               <motion.div layout key={it.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card" style={{ borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
                 <span style={{ height: 180, background: it.bg, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden' }}>
                   {it.img ? <img src={it.img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : lk ? <Figure {...figureProps(lk, 'front')} w={66} h={172} />
-                      : <Figure view="front" skin="#6E4630" topPart={{ c: it.c, d: '#F2C25B', f: 'lace' }} top={topOf(it.style)} sleeve={it.tag === 'Sleeves' ? (it.style === 'bell' ? 'bell' : 'puff') : 'cap'} skirt={skirtOf(it.style)} geleStyle="none" bagStyle="none" jewel="none" w={66} h={172} />}
+                    : lk ? (lk.tryon?.front ? <img src={lk.tryon.front} alt="" style={{ height: 180, objectFit: 'contain' }} /> : <Figure {...figureProps(lk, 'front')} garmentOnly w={66} h={172} />)
+                      : <Figure view="front" garmentOnly skin="#6E4630" topPart={{ c: it.c, d: '#F2C25B', f: 'lace' }} top={topOf(it.style)} sleeve={it.tag === 'Sleeves' ? (it.style === 'bell' ? 'bell' : 'puff') : 'cap'} skirt={skirtOf(it.style)} geleStyle="none" bagStyle="none" jewel="none" w={66} h={172} />}
                 </span>
                 <span style={{ padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontWeight: 700, fontSize: 14 }}>{it.name}</span>

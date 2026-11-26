@@ -60,7 +60,7 @@ export default function Tailor({ lookId, payload }: { lookId?: string; payload?:
               <motion.figure key={v} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
                 style={{ margin: 0, borderRadius: 20, background: 'radial-gradient(ellipse at 50% 38%,#F4F0F2 0%,#E2DADE 60%,#D3CACF 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '12px 0 14px', gap: 8, overflow: 'hidden' }}>
                 {look!.tryon?.[v] ? <img src={look!.tryon[v]} alt={`${n} view`} style={{ height: figH, objectFit: 'contain' }} />
-                  : <Figure {...figureProps(look!, v)} w={Math.round(figH * 200 / 520)} h={figH} />}
+                  : <Figure {...figureProps(look!, v)} garmentOnly w={Math.round(figH * 200 / 520)} h={figH} />}
                 <figcaption style={{ fontWeight: 700, fontSize: 14 }}>{n}</figcaption>
               </motion.figure>
             ))}
@@ -93,7 +93,7 @@ export default function Tailor({ lookId, payload }: { lookId?: string; payload?:
                 return (
                   <span key={id} style={{ width: 84, height: 108, borderRadius: 12, background: p.bg, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
                     {p.front ? <img src={p.front} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <Figure view="front" skin="#7A4A30" topPart={{ c: p.cloth, d: p.dot, f: 'lace' }} top={p.top} sleeve={p.sleeve} skirt={p.skirt} geleStyle="none" bagStyle="none" jewel="none" w={38} h={100} />}
+                      : <Figure view="front" garmentOnly skin="#7A4A30" topPart={{ c: p.cloth, d: p.dot, f: 'lace' }} top={p.top} sleeve={p.sleeve} skirt={p.skirt} geleStyle="none" bagStyle="none" jewel="none" w={38} h={100} />}
                     <span style={{ position: 'absolute', top: 4, left: 4, right: 4, background: '#FFFFFF', borderRadius: 6, padding: '0 6px', fontSize: 11, fontWeight: 600 }}>{id} · {used}</span>
                   </span>
                 );

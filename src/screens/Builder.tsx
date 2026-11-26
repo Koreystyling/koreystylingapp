@@ -4,9 +4,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Figure from '../components/Figure';
 import Acc from '../components/Acc';
 import Turntable from '../components/Turntable';
+import ModelPhoto, { PHOTO_RATIO } from '../components/ModelPhoto';
 import { Icon, Swatches, Toggle, Upload } from '../components/ui';
 import {
-  ACC_KEYS, ACC_LIB, BACKS, BUILTIN_FABRICS, HEM_PRESETS, JOIN_PRESETS, MEASURES, SIZES, SKINS, STEP_COLOR, STEP_HINTS, STEP_NAMES,
+  ACC_KEYS, ACC_LIB, BACKS, BUILTIN_FABRICS, HEM_PRESETS, JOIN_PRESETS, MEASURES, STEP_COLOR, STEP_HINTS, STEP_NAMES,
   STEP_TEXT, STEP_TITLES, STEP_WALL, SKIRT_NAMES, SLEEVE_NAMES, TOP_NAMES, fabImg, fabSize, nameFor,
 } from '../lib/data';
 import type { AccKey, BackKind, PartKey, SkirtKind, SleeveKind, StylePic, TopKind, View } from '../lib/data';
@@ -18,6 +19,7 @@ import { go, toast, useBp, useViewportH } from '../lib/hooks';
 import { averageColor, downloadSvgs } from '../lib/media';
 import { shareUrl } from '../lib/share';
 import { requestTryOn, svgToPng, tryOnEnabled } from '../lib/tryon';
+import { MODELS, modelFor, personImageFor } from '../lib/models';
 
 type ViewTab = 'Front' | 'Back' | 'Side' | 'Spin';
 
@@ -70,6 +72,11 @@ export default function Builder({ lookId }: { lookId?: string }) {
   const viewKey = (view === 'Spin' ? 'front' : view.toLowerCase()) as View;
   const fig = figureProps(look, viewKey);
   const real = showReal && look.tryon?.[viewKey];
+  const model = modelFor(look);
+  const photoW = Math.round(figH * PHOTO_RATIO);
+  const shapeMode = step === 3 && view !== 'Spin';
+  const spinImages = { ...model.views, ...(look.photo ? { front: look.photo, side: look.photo, back: look.photo } : {}), ...(showReal ? look.tryon ?? {} : {}) };
+  const sketchH = Math.round(figH * (phone ? 0.36 : compact ? 0.3 : 0.38));
 
   // ----- shape: tap or drag on the model to set the lines
   const setLineFromY = (clientY: number) => {
@@ -95,7 +102,6 @@ export default function Builder({ lookId }: { lookId?: string }) {
   const cur = picById(look, look.pic);
 
   const doTryOn = async () => {
-    if (!look.photo) { goStep(0); toast('Upload a full-body photo first.'); return; }
     if (!tryOnEnabled()) { toast('Realistic photos switch on once the try-on key is added. This is the drawn preview.'); return; }
     if (!store.spendCredit(1)) { toast('You are out of credits for this month.'); return; }
     const svg = garmentRef.current?.querySelector('svg');
@@ -103,7 +109,8 @@ export default function Builder({ lookId }: { lookId?: string }) {
     setBusy(true);
     try {
       const garment = await svgToPng(svg as SVGSVGElement);
-      const img = await requestTryOn({ personImage: look.photo, garmentImage: garment, view: viewKey, description: tailorSpec(look).map((r) => r.join(': ')).join('. '), prompt: tryOnPrompt(look, viewKey) });
+      const personImage = await personImageFor(look, viewKey);
+      const img = await requestTryOn({ personImage, garmentImage: garment, view: viewKey, description: tailorSpec(look).map((r) => r.join(': ')).join('. '), prompt: tryOnPrompt(look, viewKey) });
       upKeep({ tryon: { ...(look.tryon ?? {}), [viewKey]: img } });
       setShowReal(true);
     } catch (e) {
@@ -169,10 +176,10 @@ export default function Builder({ lookId }: { lookId?: string }) {
             <button onClick={() => goStep(0)} className="stk" style={{ minHeight: 44, padding: '4px 14px 4px 6px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
               {look.photo
                 ? <img src={look.photo} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: '1px solid #DED8E1' }} />
-                : <span style={{ width: 32, height: 32, borderRadius: '50%', background: SKINS[look.model], border: '1px solid #DED8E1' }} />}
+                : <img src={model.thumb} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', objectPosition: '50% 8%', border: '1px solid #DED8E1' }} />}
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: '#6B5B6E' }}>Dressing</span>
-                <span>{look.photo ? look.clientName : `Default model · ${SIZES[look.model]}`}</span>
+                <span>{look.photo ? look.clientName : `${model.name} · UK ${model.ukSize}`}</span>
               </span>
             </button>
             <Upload className="stk" capture label="Upload a photo" onFile={(img) => up({ photo: img })} style={{ minHeight: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: accentText }}>
@@ -180,7 +187,7 @@ export default function Builder({ lookId }: { lookId?: string }) {
             </Upload>
           </div>
 
-          {!phone && <span style={{ position: 'absolute', top: 22, right: 20, zIndex: 3, fontSize: 12, fontWeight: 600, color: '#3A3340', background: 'rgba(255,255,255,.7)', borderRadius: 999, padding: '6px 12px' }}>Preview for style. Sew from the measurements.</span>}
+          {!compact && <span style={{ position: 'absolute', top: 22, right: 20, zIndex: 3, fontSize: 12, fontWeight: 600, color: '#3A3340', background: 'rgba(255,255,255,.7)', borderRadius: 999, padding: '6px 12px' }}>Preview for style. Sew from the measurements.</span>}
 
           {!(phone && step === 3) && (
             <div style={{ position: 'absolute', left: 14, bottom: phone ? 58 : 80, zIndex: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
@@ -203,14 +210,16 @@ export default function Builder({ lookId }: { lookId?: string }) {
           <div aria-hidden="true" style={{ position: 'absolute', left: '50%', bottom: phone ? 52 : 66, transform: 'translateX(-50%)', width: phone ? 160 : 300, height: 26, borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(22,18,26,.22),rgba(22,18,26,0) 70%)' }} />
 
           <div style={{ position: 'relative', zIndex: 2, flex: 1, minHeight: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 6 }}>
-            <div ref={figRef} style={{ position: 'relative', width: figW, height: figH }}>
+            <div ref={figRef} style={{ position: 'relative', width: shapeMode ? figW : photoW, height: figH }}>
               {view === 'Spin'
-                ? <Turntable fig={fig} w={figW} h={figH} playing images={showReal ? look.tryon : null} />
+                ? <Turntable fig={fig} w={photoW} h={figH} playing images={spinImages} />
                 : (
                   <AnimatePresence mode="wait" initial={false}>
-                    <motion.div key={viewKey + (real ? 'r' : 'd')} initial={{ opacity: 0, scaleX: 0.6 }} animate={{ opacity: 1, scaleX: 1 }} exit={{ opacity: 0, scaleX: 0.6 }} transition={{ duration: 0.22 }} style={{ width: figW, height: figH, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                    <motion.div key={viewKey + (real ? 'r' : shapeMode ? 's' : 'p')} initial={{ opacity: 0, scaleX: 0.6 }} animate={{ opacity: 1, scaleX: 1 }} exit={{ opacity: 0, scaleX: 0.6 }} transition={{ duration: 0.22 }} style={{ width: shapeMode ? figW : photoW, height: figH, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
                       {real ? <img src={real} alt={`Realistic preview, ${viewKey}`} style={{ height: figH, width: 'auto', objectFit: 'contain', borderRadius: 12 }} />
-                        : <Figure {...fig} w={figW} h={figH} />}
+                        : shapeMode ? <Figure {...fig} garmentOnly w={figW} h={figH} />
+                          : look.photo ? <img src={look.photo} alt={`${look.clientName}'s photo`} style={{ height: figH, width: photoW, objectFit: 'cover', borderRadius: 14 }} />
+                            : <ModelPhoto model={model} view={viewKey} h={figH} />}
                     </motion.div>
                   </AnimatePresence>
                 )}
@@ -231,6 +240,14 @@ export default function Builder({ lookId }: { lookId?: string }) {
             </div>
           </div>
 
+          {!shapeMode && !real && (
+            <motion.button whileTap={{ scale: 0.96 }} onClick={() => goStep(2)} aria-label="Garment sketch. Change the style" className="stk"
+              style={{ position: 'absolute', right: phone ? 10 : 14, ...(phone ? { top: 66 } : { bottom: 80 }), zIndex: 4, padding: '6px 8px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: 'rgba(255,255,255,.92)', boxShadow: '0 2px 10px rgba(22,18,26,.12)' }}>
+              <span className="lbl" style={{ fontSize: 10, color: '#3A3340' }}>Garment</span>
+              <Figure {...fig} view={viewKey} garmentOnly w={Math.round(sketchH * 200 / 520)} h={sketchH} />
+            </motion.button>
+          )}
+
           <div style={{ position: 'relative', zIndex: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
             <div role="tablist" aria-label="View" style={{ display: 'flex', gap: 6 }}>
               {(['Front', 'Back', 'Side', 'Spin'] as ViewTab[]).map((n) => (
@@ -240,11 +257,9 @@ export default function Builder({ lookId }: { lookId?: string }) {
                 </motion.button>
               ))}
             </div>
-            {look.photo && (
-              look.tryon && Object.keys(look.tryon).length > 0
-                ? <button onClick={() => setShowReal(!showReal)} className="stk" style={{ minHeight: phone ? 38 : 44, padding: '0 12px', fontSize: 13 }}>{showReal ? 'Show drawing' : 'Show realistic'}</button>
-                : <motion.button whileTap={{ scale: 0.95 }} onClick={doTryOn} disabled={busy} className="stk dark" style={{ minHeight: phone ? 38 : 44, padding: '0 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>{Icon.sparkle}Make it realistic</motion.button>
-            )}
+            {look.tryon && Object.keys(look.tryon).length > 0
+              ? <button onClick={() => setShowReal(!showReal)} className="stk" style={{ minHeight: phone ? 38 : 44, padding: '0 12px', fontSize: 13 }}>{showReal ? 'Show model' : 'Show dressed'}</button>
+              : <motion.button whileTap={{ scale: 0.95 }} onClick={doTryOn} disabled={busy} className="stk dark" style={{ minHeight: phone ? 38 : 44, padding: '0 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>{Icon.sparkle}Make it realistic</motion.button>}
           </div>
         </section>
 
@@ -319,18 +334,21 @@ function PersonStep({ look, up, upKeep }: { look: Look; up: Up; upKeep: UpKeep }
           {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </label>
-      <H3>{look.photo ? 'Body size for the drawing' : 'Or pick a default model'}</H3>
+      <H3>{look.photo ? 'Korey model for this look' : 'Or choose a Korey model'}</H3>
       <div className="grid3">
-        {SKINS.map((sk, i) => (
-          <motion.button key={i} whileTap={{ scale: 0.96 }} onClick={() => up({ model: i })} aria-pressed={look.model === i} aria-label={'Default model, ' + SIZES[i]} className={on(look.model === i)}
-            style={{ padding: '6px 4px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <span style={{ width: '100%', height: 96, borderRadius: 9, background: 'radial-gradient(ellipse at 50% 30%,#FFFFFF 0%,#E9E4EC 100%)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden' }}>
-              <Figure view="front" skin={sk} width={[0.88, 0.94, 1, 1.06, 1.12, 1.18][i]} topPart={{ c: '#E9DDE3', d: '#CDB9C4', f: 'plain' }} top="square" sleeve="none" skirt="straight" geleStyle="none" shoeStyle="none" bagStyle="none" jewel="none" w={36} h={92} />
-            </span>
-            <span style={{ fontSize: 12 }}>{SIZES[i]}</span>
-          </motion.button>
-        ))}
+        {MODELS.map((m) => {
+          const sel = modelFor(look).id === m.id;
+          return (
+            <motion.button key={m.id} whileTap={{ scale: 0.96 }} onClick={() => up({ modelId: m.id, model: m.drawingSize })} aria-pressed={sel} aria-label={`${m.name}, ${m.bodyShape}, UK size ${m.ukSize}, ${m.skinTone} skin`} className={on(sel)}
+              style={{ padding: 4, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 3, textAlign: 'left' }}>
+              <img src={m.thumb} alt="" style={{ width: '100%', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: 9, display: 'block' }} />
+              <span style={{ fontSize: 13, fontWeight: 700, padding: '0 4px' }}>{m.name}</span>
+              <span style={{ fontSize: 11, fontWeight: 500, padding: '0 4px 2px', opacity: 0.8 }}>UK {m.ukSize} · {m.bodyShape}</span>
+            </motion.button>
+          );
+        })}
       </div>
+      <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>Pilot models are AI-generated. Your measurements, not the model, go to the tailor.</span>
     </>
   );
 }
@@ -360,7 +378,7 @@ function SizeStep({ look, upKeep }: { look: Look; upKeep: UpKeep }) {
           );
         })}
       </div>
-      <span style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.45 }}>The drawing gets fuller or slimmer with the bust and hips. The tailor card always shows these exact numbers.</span>
+      <span style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.45 }}>The garment sketch gets fuller or slimmer with the bust and hips. The tailor card always shows these exact numbers.</span>
     </>
   );
 }
@@ -368,7 +386,7 @@ function SizeStep({ look, upKeep }: { look: Look; upKeep: UpKeep }) {
 function PicThumb({ p, view, w = 44, h = 114 }: { p: StylePic; view: View; w?: number; h?: number }) {
   const img = view === 'front' ? p.front : p.backImg;
   if (img) return <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-  return <Figure view={view} skin="#7A4A30" topPart={{ c: p.cloth, d: p.dot, f: 'lace' }} top={p.top} sleeve={p.sleeve} skirt={p.skirt} backDesign={p.back} geleStyle="none" shoeStyle="pump" shoe={p.dot} bagStyle="none" jewel="none" w={w} h={h} />;
+  return <Figure view={view} garmentOnly skin="#7A4A30" topPart={{ c: p.cloth, d: p.dot, f: 'lace' }} top={p.top} sleeve={p.sleeve} skirt={p.skirt} backDesign={p.back} geleStyle="none" shoeStyle="pump" shoe={p.dot} bagStyle="none" jewel="none" w={w} h={h} />;
 }
 
 function StyleStep({ look, up, pics, cur }: { look: Look; up: Up; pics: StylePic[]; cur: StylePic }) {
@@ -454,7 +472,7 @@ function ShapeStep({ look, up, mode, setMode }: { look: Look; up: Up; mode: 'joi
           <span>Where the skirt ends</span><span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>{nameFor(HEM_PRESETS, look.hem)}</span>
         </button>
       </div>
-      <span style={{ fontSize: 14, color: '#3A3340', lineHeight: 1.45, background: 'var(--paper)', borderRadius: 12, padding: '10px 12px' }}>Now tap or drag on the model, anywhere from the bust to the feet. The line moves there and the outfit redraws.</span>
+      <span style={{ fontSize: 14, color: '#3A3340', lineHeight: 1.45, background: 'var(--paper)', borderRadius: 12, padding: '10px 12px' }}>Now tap or drag on the garment, anywhere from the bust to the feet. The line moves there and the outfit redraws.</span>
       <span style={{ fontWeight: 700, fontSize: 14 }}>Or pick a preset</span>
       <div className="row">
         {presets.map(([n, v]) => {
@@ -480,7 +498,7 @@ function BackStep({ look, up, upKeep }: { look: Look; up: Up; upKeep: UpKeep }) 
         {BACKS.map(([k, n]) => (
           <motion.button key={k} whileTap={{ scale: 0.96 }} onClick={() => up({ backOverride: k })} aria-pressed={backKind === k} className={on(backKind === k)} style={{ padding: '5px 4px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
             <span style={{ width: '100%', height: 110, borderRadius: 9, background: 'radial-gradient(ellipse at 50% 30%,#FFFFFF 0%,#E9E4EC 100%)', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
-              <span style={{ marginTop: -20 }}><Figure {...fp} backDesign={k} geleStyle="none" shoeStyle="none" bagStyle="none" jewel="none" geleImg={null} w={84} h={218} /></span>
+              <span style={{ marginTop: -20 }}><Figure {...fp} garmentOnly backDesign={k} geleStyle="none" shoeStyle="none" bagStyle="none" jewel="none" geleImg={null} w={84} h={218} /></span>
             </span>
             <span style={{ fontSize: 12 }}>{n}</span>
           </motion.button>
@@ -638,7 +656,7 @@ function ShareStep({ look, upKeep, figRef, sendToTailor }: { look: Look; upKeep:
       </div>
       <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>The link opens the tailor card with the drawing, the exact measurements and what to sew. No login needed. Uploaded photos stay on this device for now.</span>
       <div ref={hidden} aria-hidden="true" style={{ position: 'absolute', left: -9999, top: 0 }}>
-        {(['front', 'back', 'side'] as View[]).map((v) => <Figure key={v} {...figureProps(look, v)} w={200} h={520} />)}
+        {(['front', 'back', 'side'] as View[]).map((v) => <Figure key={v} {...figureProps(look, v)} garmentOnly w={200} h={520} />)}
       </div>
     </>
   );

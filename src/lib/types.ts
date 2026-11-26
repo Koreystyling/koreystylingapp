@@ -12,7 +12,8 @@ export interface Look {
   status: 'Draft' | 'Shared' | 'Sent to tailor';
   neededBy?: string;
   updatedAt: number;
-  model: number; // default model index (size)
+  model: number; // size index for the garment sketch proportions
+  modelId?: string; // selected photo model from the library (src/lib/models.ts)
   photo?: string | null; // uploaded full-body photo
   tryon?: { front?: string; back?: string; side?: string } | null; // AI try-on results
   unit: 'cm' | 'in';

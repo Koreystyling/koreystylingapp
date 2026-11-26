@@ -11,7 +11,7 @@ export type PartKey = 'Top' | 'Sleeves' | 'Skirt' | 'Lining';
 
 export const STEP_NAMES = ['Person', 'Size', 'Style', 'Shape', 'Back', 'Fabric', 'Accessories', 'Share'];
 export const STEP_TITLES = ['Who are we dressing?', 'Measurements', 'Mix the style', 'Shape it', 'Design the back', 'Fabric and colour', 'Gele and accessories', 'Share the look'];
-export const STEP_HINTS = ['upload a photo, or use a model', 'these go to the tailor exactly', 'pick parts from any picture', 'tap the model to set the lines', 'pick one, or upload your own', 'upload yours, or change any colour', 'all optional, or upload your own', 'send it to your tailor'];
+export const STEP_HINTS = ['upload a photo, or use a model', 'these go to the tailor exactly', 'pick parts from any picture', 'tap the garment to set the lines', 'pick one, or upload your own', 'upload yours, or change any colour', 'all optional, or upload your own', 'send it to your tailor'];
 
 // Jewel tone per step (fill), darker text tone, and the soft studio backdrop.
 export const STEP_COLOR = ['#C2185B', '#E8660C', '#6D35D8', '#0A7C86', '#2459D6', '#13804D', '#C8901A', '#CF3B2B'];
